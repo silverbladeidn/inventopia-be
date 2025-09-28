@@ -18,8 +18,8 @@ return new class extends Migration
             $table->string('email')->unique();           // Email unik
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');                  // Password login
-            $table->enum('role', ['Superadmin', 'Admin'])->default('Admin');
             $table->boolean('is_blocked')->default(false); // Status blokir/unblock
+            $table->foreignId('role_id')->nullable()->constrained('roles')->onDelete('set null'); // 1 user = 1 role
             $table->rememberToken();
             $table->timestamps();
         });

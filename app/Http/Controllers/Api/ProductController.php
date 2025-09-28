@@ -171,7 +171,6 @@ class ProductController extends Controller
                 'name' => 'required|string|max:255',
                 'category_id' => 'required|exists:categories,id',
                 'sku' => ['required', 'string', Rule::unique('products')->ignore($product->id)],
-                'stock_quantity' => 'required|integer|min:0',
                 'price' => 'required|numeric|min:0',
                 'cost_price' => 'nullable|numeric|min:0',
                 'min_stock_level' => 'nullable|integer|min:0',
@@ -238,12 +237,6 @@ class ProductController extends Controller
                 $imagePath = $image->storeAs('products', $imageName, 'public');
             }
 
-            // Update status berdasarkan stock baru
-            $status = $this->determineStockStatus(
-                $request->stock_quantity,
-                $request->min_stock_level ?? 0
-            );
-
             // Update produk
             $product->update([
                 'name' => $request->name,
@@ -252,10 +245,8 @@ class ProductController extends Controller
                 'sku' => $request->sku,
                 'price' => $request->price,
                 'cost_price' => $request->cost_price,
-                'stock_quantity' => $request->stock_quantity,
                 'min_stock_level' => $request->min_stock_level ?? 0,
                 'max_stock_level' => $request->max_stock_level,
-                'status' => $status,
                 'category_id' => $request->category_id,
                 'images' => $imagePath,
             ]);

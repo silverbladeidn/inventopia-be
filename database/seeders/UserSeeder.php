@@ -4,83 +4,73 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use App\Models\User;
+use App\Models\Role;
 use Illuminate\Support\Facades\Hash;
 
 class UserSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        // Superadmin User
-        User::create([
-            'name' => 'Super Administrator',
-            'username' => 'superadmin',
-            'email' => 'superadmin@example.com',
-            'password' => Hash::make('password123'),
-            'role' => 'Superadmin',
-            'is_blocked' => false,
-        ]);
+        // ambil role yang sudah ada dari RolePermissionSeeder
+        $superadminRole = Role::where('name', 'Superadmin')->first();
+        $adminRole      = Role::where('name', 'Admin')->first();
+        $userRole       = Role::where('name', 'User')->first();
 
-        // Admin User 1
-        User::create([
-            'name' => 'Administrator',
-            'username' => 'admin',
-            'email' => 'admin@example.com',
-            'password' => Hash::make('password123'),
-            'role' => 'Admin',
-            'is_blocked' => false,
-        ]);
+        // === Superadmin ===
+        User::updateOrCreate(
+            ['email' => 'superadmin@example.com'],
+            [
+                'name'       => 'Super Administrator',
+                'username'   => 'superadmin',
+                'password'   => Hash::make('password123'),
+                'is_blocked' => false,
+                'role_id'    => $superadminRole?->id,
+            ]
+        );
 
-        // Admin User 2
-        User::create([
-            'name' => 'John Admin',
-            'username' => 'johnadmin',
-            'email' => 'johnadmin@example.com',
-            'password' => Hash::make('password123'),
-            'role' => 'Admin',
-            'is_blocked' => false,
-        ]);
+        // === Admins ===
+        $adminUsers = [
+            ['Administrator', 'admin',      'admin@example.com'],
+            ['John Admin',    'johnadmin',  'johnadmin@example.com'],
+            ['Admin Photo',   'adminphoto', 'adminphoto@example.com'],
+            ['Test Admin',    'testadmin',  'test@example.com'],
+        ];
 
-        // Admin User 3
-        User::create([
-            'name' => 'Jane Admin',
-            'username' => 'janeadmin',
-            'email' => 'janeadmin@example.com',
-            'password' => Hash::make('password123'),
-            'role' => 'Admin',
-            'is_blocked' => false,
-        ]);
+        foreach ($adminUsers as [$name, $username, $email]) {
+            User::updateOrCreate(
+                ['email' => $email],
+                [
+                    'name'       => $name,
+                    'username'   => $username,
+                    'password'   => Hash::make('password123'),
+                    'is_blocked' => false,
+                    'role_id'    => $adminRole?->id,
+                ]
+            );
+        }
 
-        // Blocked Admin (untuk testing)
-        User::create([
-            'name' => 'Blocked Admin',
-            'username' => 'blockedadmin',
-            'email' => 'blocked@example.com',
-            'password' => Hash::make('password123'),
-            'role' => 'Admin',
-            'is_blocked' => true,
-        ]);
+        // === Admin yang diblokir ===
+        User::updateOrCreate(
+            ['email' => 'blocked@example.com'],
+            [
+                'name'       => 'Blocked Admin',
+                'username'   => 'blockedadmin',
+                'password'   => Hash::make('password123'),
+                'is_blocked' => true,
+                'role_id'    => $adminRole?->id,
+            ]
+        );
 
-        // Admin dengan profile photo
-        User::create([
-            'name' => 'Admin Photo',
-            'username' => 'adminphoto',
-            'email' => 'adminphoto@example.com',
-            'password' => Hash::make('password123'),
-            'role' => 'Admin',
-            'is_blocked' => false,
-        ]);
-
-        // Test Admin
-        User::create([
-            'name' => 'Test Admin',
-            'username' => 'testadmin',
-            'email' => 'test@example.com',
-            'password' => Hash::make('password123'),
-            'role' => 'Admin',
-            'is_blocked' => false,
-        ]);
+        // === User biasa ===
+        User::updateOrCreate(
+            ['email' => 'janeadmin@example.com'],
+            [
+                'name'       => 'Jane Admin',
+                'username'   => 'janeadmin',
+                'password'   => Hash::make('password123'),
+                'is_blocked' => false,
+                'role_id'    => $userRole?->id,
+            ]
+        );
     }
 }
