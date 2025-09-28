@@ -397,17 +397,17 @@ class ItemRequestController extends Controller
                 if ($detail->product) {
                     $detail->product->increment('stock_quantity', $detail->requested_quantity);
                 }
-                $detail->update(['status' => 'cancel']);
+                $detail->update(['status' => 'cancelled']);
             }
 
             // Update status di header request
             $oldData = $itemRequest->toArray();
-            $itemRequest->update(['status' => 'cancel']);
+            $itemRequest->update(['status' => 'cancelled']);
 
             // Simpan log
             $itemRequest->logs()->create([
                 'user_id'    => Auth::id(),
-                'action'     => 'cancel',
+                'action'     => 'cancelled',
                 'old_data'   => $oldData,
                 'new_data'   => $itemRequest->toArray(),
                 'description' => 'Request dibatalkan oleh user'

@@ -22,6 +22,7 @@ return new class extends Migration
                 'pending',
                 'approved',
                 'rejected',
+                'cancelled',
                 'partially_approved',
                 'completed'
             ])->default('pending');
