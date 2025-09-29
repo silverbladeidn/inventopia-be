@@ -58,6 +58,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Item Request CRUD - put this AFTER specific routes
     Route::apiResource('item-requests', ItemRequestController::class);
     Route::post('item-requests/{itemRequest}/cancel', [ItemRequestController::class, 'cancel']);
+    Route::post('item-requests/{id}/submit', [ItemRequestController::class, 'submit']);
     // User specific routes
     Route::get('my-requests', [ItemRequestController::class, 'myRequests']);
     Route::get('my-requests/stats', [ItemRequestController::class, 'myStats']);

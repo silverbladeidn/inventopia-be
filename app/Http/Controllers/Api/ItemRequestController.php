@@ -91,7 +91,7 @@ class ItemRequestController extends Controller
             ], 422);
         }
 
-        $action = $request->input('action', 'draft'); // default draft
+        $action = $request->input('action', 'submit'); // default draft
         DB::beginTransaction();
 
         try {
@@ -237,92 +237,128 @@ class ItemRequestController extends Controller
     /**
      * Update the specified resource (untuk admin jika ingin mengubah status)
      */
-    public function update(Request $request, string $id): JsonResponse
+    public function submit(Request $request, $id)
     {
-        /** @var User $user */
-        $user = Auth::user();
-
-        // Only admin can update requests
-        if (!$user->hasRole('admin')) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized'
-            ], 403);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'status' => 'required|in:approved,rejected,cancelled',
-            'admin_note' => 'nullable|string|max:1000'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
+        $authUser = Auth::user();
 
         DB::beginTransaction();
-
         try {
-            $itemRequest = ItemRequest::with('details.product')->findOrFail($id);
+            // Pastikan request milik user login dan status draft
+            $itemRequest = ItemRequest::where('id', $id)
+                ->where('user_id', $authUser->id)
+                ->where('status', 'draft') // cuma draft yang bisa disubmit
+                ->firstOrFail();
 
-            // Store old data for logging
-            $oldData = $itemRequest->toArray();
-
-            // Jika status berubah menjadi cancelled, kembalikan stok
-            if ($request->status === 'cancelled' && $itemRequest->status === 'approved') {
-                foreach ($itemRequest->details as $detail) {
-                    if ($detail->status === 'approved') {
-                        $product = $detail->product;
-                        $product->increment('stock_quantity', $detail->approved_quantity);
-
-                        Log::info("Stock restored for cancelled request", [
-                            'product_id' => $product->id,
-                            'product_name' => $product->name,
-                            'quantity_restored' => $detail->approved_quantity,
-                            'request_number' => $itemRequest->request_number
-                        ]);
-                    }
+            // Validasi stok sebelum submit
+            foreach ($itemRequest->details as $detail) {
+                $product = Product::findOrFail($detail->product_id);
+                if ($product->stock_quantity < $detail->requested_quantity) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Stok tidak mencukupi untuk {$product->name}. " .
+                            "Stok: {$product->stock_quantity}, diminta: {$detail->requested_quantity}"
+                    ], 422);
                 }
             }
 
-            // Update main request
+            // Update status ke pending
             $itemRequest->update([
-                'status' => $request->status,
-                'admin_note' => $request->admin_note
+                'status' => 'pending'
             ]);
 
-            // Update details status jika di-cancel
-            if ($request->status === 'cancelled') {
-                $itemRequest->details()->update(['status' => 'cancelled']);
+            // Update status details ke pending
+            $itemRequest->details()->update(['status' => 'pending']);
+
+            // Kurangi stok
+            foreach ($itemRequest->details as $detail) {
+                $product = Product::findOrFail($detail->product_id);
+                $oldStock = $product->stock_quantity;
+                $product->decrement('stock_quantity', $detail->requested_quantity);
+
+                Log::info("Stock reduced for product: {$product->name}", [
+                    'product_id' => $product->id,
+                    'old_stock' => $oldStock,
+                    'new_stock' => $product->stock_quantity,
+                    'quantity_used' => $detail->requested_quantity,
+                    'request_number' => $itemRequest->request_number,
+                    'user_id' => $authUser->id
+                ]);
             }
 
-            // Log the update
+            // Catat log
             ItemRequestLog::create([
                 'item_request_id' => $itemRequest->id,
-                'user_id' => $user->id,
-                'action' => 'status_updated',
-                'old_data' => $oldData,
-                'new_data' => $itemRequest->fresh()->toArray(),
-                'description' => "Request status changed to {$request->status} by admin"
+                'user_id'         => $authUser->id,
+                'action'          => 'submitted',
+                'old_data'        => ['status' => 'draft'],
+                'new_data'        => ['status' => 'pending'],
+                'description'     => "Draft submitted for approval",
             ]);
+
+            // Mereload data dengan relationship sebelum kirim email
+            $itemRequest->refresh();
+            $itemRequest->load(['details.product', 'user']);
+
+            // Mengirim dengan logging yang lebih detail
+            try {
+                Log::info('Attempting to send email for submitted draft', [
+                    'request_id' => $itemRequest->id,
+                    'request_number' => $itemRequest->request_number,
+                    'status' => $itemRequest->status
+                ]);
+
+                $emailSettings = EmailSettings::first();
+
+                if ($emailSettings && $emailSettings->request_notifications) {
+                    Log::info('Email conditions met, preparing to send', [
+                        'admin_email' => $emailSettings->admin_email,
+                        'cc_emails' => $emailSettings->cc_emails,
+                        'request_notifications' => $emailSettings->request_notifications
+                    ]);
+
+                    $mail = Mail::to($emailSettings->admin_email);
+
+                    if (!empty($emailSettings->cc_emails)) {
+                        $mail->cc($emailSettings->cc_emails);
+                    }
+
+                    // Memastikan data yang dikirim ke Mailable bersifta fresh
+                    $mail->send(new ItemRequestCreated($itemRequest));
+
+                    Log::info('Email notification sent successfully for submitted draft', [
+                        'request_number' => $itemRequest->request_number,
+                        'recipient' => $emailSettings->admin_email
+                    ]);
+                } else {
+                    Log::warning('Email not sent - settings not configured', [
+                        'has_email_settings' => !is_null($emailSettings),
+                        'notifications_enabled' => $emailSettings ? $emailSettings->request_notifications : false
+                    ]);
+                }
+            } catch (\Exception $mailErr) {
+                Log::error('Gagal kirim email notifikasi untuk draft yang di-submit: ' . $mailErr->getMessage(), [
+                    'exception' => $mailErr->getTraceAsString(),
+                    'request_id' => $itemRequest->id
+                ]);
+                // Jangan return error, biarkan proses continue
+            }
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'data' => $itemRequest->fresh(['details.product.category', 'user', 'approvedBy']),
-                'message' => 'Request updated successfully'
+                'data'    => $itemRequest,
+                'message' => 'Request berhasil dikirim dan stok dikurangi',
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-
+            Log::error('Error submitting draft request: ' . $e->getMessage(), [
+                'request_id' => $id,
+                'user_id' => $authUser->id
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to update request',
-                'error' => $e->getMessage()
+                'message' => 'Gagal submit request: ' . $e->getMessage()
             ], 500);
         }
     }
